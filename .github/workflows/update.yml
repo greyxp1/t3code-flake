@@ -1,0 +1,192 @@
+name: Update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+    - cron: "3 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      channels: ${{ steps.update.outputs.channels }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check for updates
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REFRESH_INPUTS: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '3 8 * * 1' }}
+        run: |
+          set -euo pipefail
+          outdated=$(./update.sh --outdated | xargs)
+          echo "outdated=$outdated" >> "$GITHUB_OUTPUT"
+          if [ -n "$outdated" ] || [ "$REFRESH_INPUTS" = true ]; then
+            echo "update_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check cache configuration
+        if: steps.check.outputs.update_needed == 'true'
+        env:
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          : "${CACHIX_CACHE_NAME:?Set the CACHIX_CACHE_NAME repository variable}"
+          : "${CACHIX_AUTH_TOKEN:?Set the CACHIX_AUTH_TOKEN repository secret}"
+
+      - name: Install Nix
+        if: steps.check.outputs.update_needed == 'true'
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+
+      - name: Update
+        id: update
+        if: steps.check.outputs.update_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTDATED: ${{ steps.check.outputs.outdated }}
+          REFRESH_INPUTS: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '3 8 * * 1' }}
+        run: |
+          set -euo pipefail
+          for channel in $OUTDATED; do
+            ./update.sh "$channel"
+          done
+          if [ "$REFRESH_INPUTS" = true ]; then
+            nix flake update
+          fi
+          git diff --quiet && exit 0
+          nix flake check --no-build --all-systems --no-update-lock-file
+
+          # A nixpkgs update changes both channels.
+          if git diff --quiet -- flake.lock; then
+            channels=$OUTDATED
+          else
+            channels="stable nightly"
+          fi
+          echo "channels=$(jq -cn --arg channels "$channels" '$channels | split(" ") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload candidate
+        if: steps.update.outputs.channels
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: update
+          path: |
+            sources
+            flake.lock
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.channels
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest]
+        channel: ${{ fromJSON(needs.prepare.outputs.channels) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: update
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Build and upload
+        env:
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
+        run: |
+          set -o pipefail
+          nix build --no-link -L --no-update-lock-file --print-out-paths .#${{ matrix.channel }} .#${{ matrix.channel }}.desktop \
+            | cachix push "$CACHIX_CACHE_NAME"
+          mkdir built && touch "built/${{ matrix.channel }}-${{ matrix.runner }}"
+
+      - name: Record build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: built-${{ matrix.channel }}-${{ matrix.runner }}
+          path: built
+          retention-days: 1
+
+  # Commits successful channels independently, keeping lock updates atomic.
+  commit:
+    needs: [prepare, build]
+    timeout-minutes: 10
+    if: always() && needs.prepare.outputs.channels
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: update
+
+      - name: Download build records
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        continue-on-error: true
+        with:
+          pattern: built-*
+          path: built
+          merge-multiple: true
+
+      - name: Commit
+        env:
+          UPDATE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          built() {
+            for runner in ubuntu-24.04 ubuntu-24.04-arm macos-latest; do
+              [ -f "built/$1-$runner" ] || return 1
+            done
+          }
+          # Keep a changed lock and its channel hashes together.
+          if ! git diff --quiet -- flake.lock && ! { built stable && built nightly; }; then
+            echo "::warning::nixpkgs update did not build on every runner"
+            exit 0
+          fi
+          for channel in stable nightly; do
+            git diff --quiet -- "sources/$channel.nix" && continue
+            built "$channel" || { echo "::warning::$channel failed to build"; continue; }
+            git commit -m "updated $channel to $(sed -n 's/^  version = "\(.*\)";/\1/p' "sources/$channel.nix")" -- "sources/$channel.nix"
+          done
+          if ! git diff --quiet -- flake.lock && built stable && built nightly; then
+            git commit -m "updated nixpkgs" -- flake.lock
+          fi
+          git diff --quiet "origin/$UPDATE_BRANCH" HEAD && exit 0
+          git push origin "HEAD:$UPDATE_BRANCH"

@@ -1,0 +1,68 @@
+name: Nix cache
+
+# Update commits push with GITHUB_TOKEN, which triggers no workflows, so the update workflow uploads its own builds.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/cache.yml"
+      - "flake.nix"
+      - "flake.lock"
+      - "package.nix"
+      - "sources/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Cache ${{ matrix.system }}
+    timeout-minutes: 120
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            runner: macos-latest
+    steps:
+      - name: Check cache configuration
+        env:
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          : "${CACHIX_CACHE_NAME:?Set the CACHIX_CACHE_NAME repository variable}"
+          : "${CACHIX_AUTH_TOKEN:?Set the CACHIX_AUTH_TOKEN repository secret}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - name: Build and upload T3 Code
+        env:
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
+        run: |
+          set -euo pipefail
+          outputs=$(nix eval --json --no-update-lock-file .#packages.${{ matrix.system }} \
+            --apply 'p: map (package: package.outPath) [p.stable p.stable.desktop p.nightly p.nightly.desktop]' \
+            | jq -r '.[]')
+          if nix path-info --store "https://$CACHIX_CACHE_NAME.cachix.org" --stdin <<< "$outputs" >/dev/null 2>&1; then
+            echo "All outputs are already cached"
+            exit 0
+          fi
+          nix build --print-build-logs --no-link --no-update-lock-file --print-out-paths \
+            .#packages.${{ matrix.system }}.{stable,stable.desktop,nightly,nightly.desktop} \
+            | cachix push "$CACHIX_CACHE_NAME"

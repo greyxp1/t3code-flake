@@ -1,6 +1,6 @@
 {
-  version = "0.1.11-nightly.20261118.4903";
-  hash = "sha256-WyP3vfXhiN++ljW8HJXOLbRTYT3GohbkjlFyNHybSiQ=";
+  version = "0.1.11-nightly.20261119.4928";
+  hash = "sha256-pdgf+a/oaaOzlHqk8+GmoD123KaEKCRZmN7ILI4ae6c=";
   pnpmDepsHash = "sha256-s/vm8Ox4o/AYpNC/amYP1KFWwh7SY5bCmVBuIJn9f/c=";
   cargoHash = "sha256-5cmG2daM1bVOA23gjjoalbx0fEL1hmqV6WZov0sUZp8=";
   spdxRev = "c4a7237ec8f4654e867546f9f409749300f1bf4c";

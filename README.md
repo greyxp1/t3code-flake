@@ -10,15 +10,15 @@ Add the flake as an input:
 t3code.url = "github:greyxp1/t3code-flake";
 ```
 
-Add the binary cache and import the module:
+Import the NixOS module. Add the binary cache to use pre-built packages.
 
 ```nix
 {inputs, pkgs, ...}: {
   imports = [inputs.t3code.nixosModules.default];
 
   nix.settings = {
-    substituters = ["https://t3code.cachix.org"];
-    trusted-public-keys = ["t3code.cachix.org-1:dSRBDTyasXJc8XKCqG1imoUlXlZv5T478bD+icYc68w="];
+    extra-substituters = ["https://greyxp1.cachix.org"];
+    extra-trusted-public-keys = ["greyxp1.cachix.org-1:hUnQC8sjfKykPgkFdcXiuv4xjiISuWnBnPfW2F2df3k="];
   };
 
   programs.t3code = {

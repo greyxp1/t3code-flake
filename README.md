@@ -40,6 +40,7 @@ Import the NixOS module. Add the binary cache to use pre-built packages.
       ---
     '';
 
+    # Installs and configures the CLIs, while settings.providerInstances configures how T3 Code invokes them.
     providers = {
       codex = {
         enable = true;

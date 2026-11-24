@@ -69,6 +69,7 @@ jobs:
           fi
           git diff --quiet && exit 0
           nix flake check --no-build --all-systems --no-update-lock-file
+          nix build --no-link --no-update-lock-file .#checks.x86_64-linux.module
 
           # A nixpkgs update changes both channels.
           if git diff --quiet -- flake.lock; then

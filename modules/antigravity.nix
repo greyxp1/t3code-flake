@@ -12,7 +12,6 @@
   skills = cfg.skills // antigravity.skills;
   hasInstructions = instructions != "";
   hasSkills = skills != {};
-  needsWrapper = gateway != null || hasInstructions || hasSkills;
   instructionsFile = pkgs.writeText "antigravity-AGENTS.md" instructions;
   skillsDir = pkgs.linkFarm "antigravity-skills" (
     lib.mapAttrsToList (name: content: {
@@ -25,7 +24,7 @@
     entries = [{path = toString skillsDir;}];
   };
   coreutils = pkgs.coreutils;
-  parseArgsScript = lib.optionalString needsWrapper ''
+  parseArgsScript = ''
     subcmd=""
     default_gemini_dir="''${HOME:+$HOME/.gemini}"
     gemini_dir="$default_gemini_dir"
@@ -127,7 +126,7 @@
       gemini_dir="$default_gemini_dir"
     fi
   '';
-  customizationsScript = lib.optionalString (hasInstructions || hasSkills) ''
+  customizationsScript = ''
     case "$gemini_dir" in
       ""|/*) ;;
       *)
@@ -144,14 +143,24 @@
         "${lib.getExe' coreutils "ln"}" -sfnT "$1" "$2"
       fi
     }
+    # Removes only a link left by earlier managed configuration.
+    unlink_managed() {
+      case "$("${lib.getExe' coreutils "readlink"}" "$2" 2>/dev/null)" in
+        $1) "${lib.getExe' coreutils "rm"}" -f "$2" ;;
+      esac
+    }
     sync_dir() {
       config_dir="$1/config"
-      ${lib.optionalString hasInstructions ''
-        link_managed ${lib.escapeShellArg (toString instructionsFile)} "$config_dir/AGENTS.md"
-      ''}
-      ${lib.optionalString hasSkills ''
-        link_managed ${lib.escapeShellArg (toString skillsFile)} "$config_dir/skills.json"
-      ''}
+      ${
+        if hasInstructions
+        then ''link_managed ${lib.escapeShellArg (toString instructionsFile)} "$config_dir/AGENTS.md"''
+        else ''unlink_managed "${builtins.storeDir}/*-antigravity-AGENTS.md" "$config_dir/AGENTS.md"''
+      }
+      ${
+        if hasSkills
+        then ''link_managed ${lib.escapeShellArg (toString skillsFile)} "$config_dir/skills.json"''
+        else ''unlink_managed "${builtins.storeDir}/*-antigravity-skills.json" "$config_dir/skills.json"''
+      }
     }
     if [ -n "$default_gemini_dir" ] && [ "$gemini_dir" != "$default_gemini_dir" ]; then
       (sync_dir "$default_gemini_dir") 2>/dev/null || true
@@ -161,26 +170,20 @@
     fi
   '';
   gatewayScript = lib.optionalString (gateway != null) ''
-    if [ "$subcmd" != "acp" ] && gateway_api_key="$("${lib.getExe' coreutils "cat"}" ${lib.escapeShellArg gateway.apiKeyFile} 2>/dev/null)"; then
-      export AGY_LLM_GATEWAY_URL=${lib.escapeShellArg gateway.url}
-      export AGY_LLM_GATEWAY_WIRE_PROTOCOL=genai
-      export AGY_LLM_GATEWAY_MODELS=${lib.escapeShellArg (lib.concatStringsSep "," gateway.models)}
-      export AGY_LLM_GATEWAY_API_KEY="$gateway_api_key"
+    if [ "$subcmd" != "acp" ]; then
+      if gateway_api_key="$("${lib.getExe' coreutils "cat"}" ${lib.escapeShellArg gateway.apiKeyFile} 2>/dev/null)"; then
+        export AGY_LLM_GATEWAY_URL=${lib.escapeShellArg gateway.url}
+        export AGY_LLM_GATEWAY_WIRE_PROTOCOL=genai
+        export AGY_LLM_GATEWAY_MODELS=${lib.escapeShellArg (lib.concatStringsSep "," gateway.models)}
+        export AGY_LLM_GATEWAY_API_KEY="$gateway_api_key"
+      else
+        echo ${lib.escapeShellArg "agy: warning: failed to read gateway apiKeyFile ${gateway.apiKeyFile}"} >&2
+      fi
     fi
   '';
-  wrappedPackage = pkgs.symlinkJoin {
-    name = "antigravity-cli-configured";
-    paths = [antigravity.package];
-    nativeBuildInputs = [pkgs.makeWrapper];
-    postBuild = ''
-      wrapProgram "$out/bin/agy" \
-        --run ${lib.escapeShellArg (parseArgsScript + customizationsScript + gatewayScript)}
-    '';
-    meta = antigravity.package.meta;
-  };
 in {
   options.programs.t3code.providers.antigravity = {
-    enable = lib.mkEnableOption "Antigravity CLI";
+    enable = lib.mkEnableOption "Antigravity CLI, which requires `programs.t3code.enable`";
     package = lib.mkPackageOption pkgs "antigravity-cli" {};
     instructions = lib.mkOption {
       type = lib.types.lines;
@@ -221,10 +224,16 @@ in {
   };
 
   config = lib.mkIf (cfg.enable && antigravity.enable) {
-    programs.t3code.providers.antigravity.finalPackage =
-      if needsWrapper
-      then wrappedPackage
-      else antigravity.package;
+    programs.t3code.providers.antigravity.finalPackage = pkgs.symlinkJoin {
+      name = "antigravity-cli-configured";
+      paths = [antigravity.package];
+      nativeBuildInputs = [pkgs.makeWrapper];
+      postBuild = ''
+        wrapProgram "$out/bin/agy" \
+          --run ${lib.escapeShellArg (parseArgsScript + customizationsScript + gatewayScript)}
+      '';
+      meta = antigravity.package.meta;
+    };
     environment.systemPackages = [antigravity.finalPackage];
   };
 }

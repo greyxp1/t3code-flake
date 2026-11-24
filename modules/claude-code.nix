@@ -10,7 +10,7 @@
   instructions = lib.concatStringsSep "\n" (lib.filter (s: s != "") [cfg.instructions claudeCode.instructions]);
 in {
   options.programs.t3code.providers.claudeCode = {
-    enable = lib.mkEnableOption "Claude Code";
+    enable = lib.mkEnableOption "Claude Code, which requires `programs.t3code.enable`";
     package = lib.mkPackageOption pkgs "claude-code" {};
     settings = lib.mkOption {
       type = format.type;

@@ -11,7 +11,7 @@
   instructionsFile = pkgs.writeText "codex-AGENTS.md" instructions;
 in {
   options.programs.t3code.providers.codex = {
-    enable = lib.mkEnableOption "Codex";
+    enable = lib.mkEnableOption "Codex, which requires `programs.t3code.enable`";
     package = lib.mkPackageOption pkgs "codex" {};
     settings = lib.mkOption {
       type = format.type;
@@ -37,30 +37,39 @@ in {
   };
 
   config = lib.mkIf (cfg.enable && codex.enable) {
-    programs.t3code.providers.codex.finalPackage =
-      if instructions == ""
-      then codex.package
-      else
-        pkgs.symlinkJoin {
-          name = "codex-configured";
-          paths = [codex.package];
-          nativeBuildInputs = [pkgs.makeWrapper];
-          postBuild = ''
-            wrapProgram $out/bin/codex --run ${lib.escapeShellArg ''
-              codex_home="''${CODEX_HOME:-$HOME/.codex}"
-              if [ "$(${pkgs.coreutils}/bin/readlink "$codex_home/AGENTS.md" 2>/dev/null)" != ${lib.escapeShellArg (toString instructionsFile)} ]; then
+    programs.t3code.providers.codex.finalPackage = pkgs.symlinkJoin {
+      name = "codex-configured";
+      paths = [codex.package];
+      nativeBuildInputs = [pkgs.makeWrapper];
+      postBuild = ''
+        wrapProgram $out/bin/codex --run ${lib.escapeShellArg ''
+          codex_home="''${CODEX_HOME:-$HOME/.codex}"
+          agents_target="$(${pkgs.coreutils}/bin/readlink "$codex_home/AGENTS.md" 2>/dev/null)" || true
+          ${
+            if instructions == ""
+            # Remove only a link left by earlier managed instructions.
+            then ''
+              case "$agents_target" in
+                ${builtins.storeDir}/*-codex-AGENTS.md) ${pkgs.coreutils}/bin/rm -f "$codex_home/AGENTS.md" ;;
+              esac
+            ''
+            else ''
+              if [ "$agents_target" != ${lib.escapeShellArg (toString instructionsFile)} ]; then
                 ${pkgs.coreutils}/bin/mkdir -p "$codex_home"
                 ${pkgs.coreutils}/bin/ln -sfnT ${instructionsFile} "$codex_home/AGENTS.md"
               fi
-            ''}
-          '';
-          meta = codex.package.meta;
-        };
+            ''
+          }
+        ''}
+      '';
+      meta = codex.package.meta;
+    };
     environment.systemPackages = [codex.finalPackage];
     environment.etc =
       {
         "codex/config.toml".source = format.generate "codex-system-config.toml" codex.settings;
       }
+      # The /etc layout is part of the contract: Codex discovers each skill as a directory containing SKILL.md.
       // lib.mapAttrs' (name: content:
         lib.nameValuePair "codex/skills/${name}" {
           source = pkgs.writeTextDir "SKILL.md" content;

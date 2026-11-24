@@ -1,4 +1,4 @@
-{
+self: {
   config,
   lib,
   pkgs,
@@ -12,7 +12,12 @@
 in {
   options.programs.t3code.providers.codex = {
     enable = lib.mkEnableOption "Codex, which requires `programs.t3code.enable`";
-    package = lib.mkPackageOption pkgs "codex" {};
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.codex;
+      defaultText = lib.literalExpression "llm-agents.packages.\${pkgs.stdenv.hostPlatform.system}.codex";
+      description = "Codex package.";
+    };
     settings = lib.mkOption {
       type = format.type;
       default = {};

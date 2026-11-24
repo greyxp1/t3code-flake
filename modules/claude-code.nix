@@ -1,4 +1,4 @@
-{
+self: {
   config,
   lib,
   pkgs,
@@ -11,7 +11,12 @@
 in {
   options.programs.t3code.providers.claudeCode = {
     enable = lib.mkEnableOption "Claude Code, which requires `programs.t3code.enable`";
-    package = lib.mkPackageOption pkgs "claude-code" {};
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
+      defaultText = lib.literalExpression "llm-agents.packages.\${pkgs.stdenv.hostPlatform.system}.claude-code";
+      description = "Claude Code package.";
+    };
     settings = lib.mkOption {
       type = format.type;
       default = {};

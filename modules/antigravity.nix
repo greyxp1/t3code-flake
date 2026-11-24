@@ -1,4 +1,4 @@
-{
+self: {
   config,
   lib,
   pkgs,
@@ -193,7 +193,12 @@
 in {
   options.programs.t3code.providers.antigravity = {
     enable = lib.mkEnableOption "Antigravity CLI, which requires `programs.t3code.enable`";
-    package = lib.mkPackageOption pkgs "antigravity-cli" {};
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.antigravity-cli;
+      defaultText = lib.literalExpression "llm-agents.packages.\${pkgs.stdenv.hostPlatform.system}.antigravity-cli";
+      description = "Antigravity CLI package.";
+    };
     instructions = lib.mkOption {
       type = lib.types.lines;
       default = "";

@@ -33,7 +33,7 @@ self: {
       '';
     });
 in {
-  imports = [./modules/codex.nix ./modules/claude-code.nix ./modules/antigravity.nix];
+  imports = map (module: lib.modules.importApply module self) [./modules/codex.nix ./modules/claude-code.nix ./modules/antigravity.nix];
 
   options.programs.t3code = {
     enable = lib.mkEnableOption "T3 Code";

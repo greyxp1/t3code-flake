@@ -10,15 +10,18 @@ Add the flake as an input:
 t3code.url = "github:greyxp1/t3code-flake";
 ```
 
-Import the NixOS module. Add the binary cache to use pre-built packages.
+Import the NixOS module. Provider CLIs default to [llm-agents.nix](https://github.com/numtide/llm-agents.nix) packages. Add both binary caches to use pre-built packages.
 
 ```nix
 {inputs, pkgs, ...}: {
   imports = [inputs.t3code.nixosModules.default];
 
   nix.settings = {
-    extra-substituters = ["https://greyxp1.cachix.org"];
-    extra-trusted-public-keys = ["greyxp1.cachix.org-1:hUnQC8sjfKykPgkFdcXiuv4xjiISuWnBnPfW2F2df3k="];
+    extra-substituters = ["https://greyxp1.cachix.org" "https://cache.numtide.com"];
+    extra-trusted-public-keys = [
+      "greyxp1.cachix.org-1:hUnQC8sjfKykPgkFdcXiuv4xjiISuWnBnPfW2F2df3k="
+      "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+    ];
   };
 
   programs.t3code = {
@@ -44,19 +47,19 @@ Import the NixOS module. Add the binary cache to use pre-built packages.
     providers = {
       codex = {
         enable = true;
-        # package = pkgs.codex;
+        # package = inputs.t3code.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.codex;
         settings.model_reasoning_effort = "high"; # /etc/codex/config.toml
         # instructions = "";
         # skills = {};
       };
       claudeCode = {
         # enable = true;
-        # package = pkgs.claude-code; # unfree
+        # package = inputs.t3code.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
         # settings = {}; # /etc/claude-code/managed-settings.json
       };
       antigravity = {
         # enable = true;
-        # package = pkgs.antigravity-cli; # unfree
+        # package = inputs.t3code.inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.antigravity-cli;
         # Exported as GEMINI_API_KEY for ACP sessions.
         # apiKeyFile = "/run/secrets/gemini-api-key";
         # Gemini-compatible gateway for terminal agy sessions.

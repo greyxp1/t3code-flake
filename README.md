@@ -57,6 +57,8 @@ Import the NixOS module. Add the binary cache to use pre-built packages.
       antigravity = {
         # enable = true;
         # package = pkgs.antigravity-cli; # unfree
+        # Exported as GEMINI_API_KEY for ACP sessions.
+        # apiKeyFile = "/run/secrets/gemini-api-key";
         # Gemini-compatible gateway for terminal agy sessions.
         # gateway = {
         #   url = "https://gateway.example";

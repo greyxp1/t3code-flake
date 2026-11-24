@@ -18,8 +18,8 @@
       nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
         module = let
           pkgs = nixpkgs.legacyPackages.${system};
-          # Stub providers print the gateway URL so the check skips unfree builds.
-          stub = name: pkgs.writeShellScriptBin name ''echo "''${AGY_LLM_GATEWAY_URL-}"'';
+          # Stub providers print the gateway URL and Gemini API key so the check skips unfree builds.
+          stub = name: pkgs.writeShellScriptBin name ''echo "''${AGY_LLM_GATEWAY_URL-}|''${GEMINI_API_KEY-}"'';
           configure = override: nixpkgs.lib.nixosSystem {
             inherit system;
             modules = [self.nixosModules.default override {
@@ -51,6 +51,7 @@
                     enable = true;
                     package = stub "agy";
                     instructions = "Antigravity";
+                    apiKeyFile = pkgs.writeText "acp-key" "acp-secret";
                     gateway = {
                       url = "https://gateway.test";
                       apiKeyFile = pkgs.writeText "gateway-key" "key";
@@ -74,13 +75,14 @@
             }];
           };
           configured = configure {};
-          # Drops managed customizations and points the gateway at a missing key.
+          # Drops managed customizations and points the gateway and ACP key at missing files.
           cleared = (configure {
             programs.t3code = {
               instructions = nixpkgs.lib.mkForce "";
               skills = nixpkgs.lib.mkForce {};
               providers.codex.instructions = nixpkgs.lib.mkForce "";
               providers.antigravity.instructions = nixpkgs.lib.mkForce "";
+              providers.antigravity.apiKeyFile = nixpkgs.lib.mkForce "/nonexistent/acp-key";
               providers.antigravity.gateway.apiKeyFile = nixpkgs.lib.mkForce "/nonexistent/gateway-key";
             };
           }).config.programs.t3code.providers;
@@ -107,23 +109,26 @@
             expect ${etc."claude-code/.claude/skills/override/SKILL.md".source} "Shared override"
 
             agy_out=$(${providers.antigravity.finalPackage}/bin/agy)
-            [ "$agy_out" = https://gateway.test ]
+            [ "$agy_out" = "https://gateway.test|" ]
             expect $HOME/.gemini/config/AGENTS.md "$(printf 'Shared\nAntigravity')"
             skills=$(jq -r '.entries[0].path' $HOME/.gemini/config/skills.json)
             expect $skills/shared/SKILL.md "Shared skill"
             expect $skills/override/SKILL.md "Shared override"
 
             acp_dir=$TMPDIR/acp-gemini
-            acp_out=$(${providers.antigravity.finalPackage}/bin/agy acp --gemini-dir "$acp_dir")
-            [ -z "$acp_out" ]
+            acp_out=$(GEMINI_API_KEY=stale ${providers.antigravity.finalPackage}/bin/agy acp --gemini-dir "$acp_dir")
+            [ "$acp_out" = "|acp-secret" ]
             expect "$acp_dir/config/AGENTS.md" "$(printf 'Shared\nAntigravity')"
             [ "$(jq -r '.entries[0].path' "$acp_dir/config/skills.json")" = "$skills" ]
 
             # Cleared customizations remove managed links but keep user files.
             ${cleared.codex.finalPackage}/bin/codex
             agy_out=$(${cleared.antigravity.finalPackage}/bin/agy 2>$TMPDIR/agy-stderr)
-            [ -z "$agy_out" ]
+            [ "$agy_out" = "|" ]
             grep -q 'agy: warning: failed to read gateway apiKeyFile' $TMPDIR/agy-stderr
+            acp_out=$(${cleared.antigravity.finalPackage}/bin/agy acp 2>$TMPDIR/agy-acp-stderr)
+            [ "$acp_out" = "|" ]
+            grep -q 'agy: warning: failed to read apiKeyFile' $TMPDIR/agy-acp-stderr
             for managed in .codex/AGENTS.md .gemini/config/AGENTS.md .gemini/config/skills.json; do
               [ ! -L "$HOME/$managed" ] || { echo "$managed: not removed"; exit 1; }
             done

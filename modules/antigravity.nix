@@ -181,6 +181,15 @@
       fi
     fi
   '';
+  acpApiKeyScript = lib.optionalString (antigravity.apiKeyFile != null) ''
+    if [ "$subcmd" = "acp" ] && [ "$acp_help" -eq 0 ]; then
+      if acp_api_key="$("${lib.getExe' coreutils "cat"}" ${lib.escapeShellArg antigravity.apiKeyFile} 2>/dev/null)"; then
+        export GEMINI_API_KEY="$acp_api_key"
+      else
+        echo ${lib.escapeShellArg "agy: warning: failed to read apiKeyFile ${antigravity.apiKeyFile}"} >&2
+      fi
+    fi
+  '';
 in {
   options.programs.t3code.providers.antigravity = {
     enable = lib.mkEnableOption "Antigravity CLI, which requires `programs.t3code.enable`";
@@ -194,6 +203,11 @@ in {
       type = lib.types.attrsOf lib.types.lines;
       default = {};
       description = "Antigravity-specific skills merged over the shared skills and registered in each Antigravity config directory's skills.json, keyed by name.";
+    };
+    apiKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Path to the Gemini API key exported as GEMINI_API_KEY for ACP sessions, read at launch.";
     };
     gateway = lib.mkOption {
       default = null;
@@ -230,7 +244,7 @@ in {
       nativeBuildInputs = [pkgs.makeWrapper];
       postBuild = ''
         wrapProgram "$out/bin/agy" \
-          --run ${lib.escapeShellArg (parseArgsScript + customizationsScript + gatewayScript)}
+          --run ${lib.escapeShellArg (parseArgsScript + customizationsScript + gatewayScript + acpApiKeyScript)}
       '';
       meta = antigravity.package.meta;
     };

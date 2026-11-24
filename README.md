@@ -29,6 +29,42 @@ Import the NixOS module. Add the binary cache to use pre-built packages.
       config.setupMode = "existing";
     };
 
+    # Shared by all enabled providers. Provider instructions are appended and provider skills override shared ones.
+    instructions = ''
+      Prefer small, focused changes.
+    '';
+    skills.review = ''
+      ---
+      name: review
+      description: Use when reviewing a change.
+      ---
+    '';
+
+    providers = {
+      codex = {
+        enable = true;
+        # package = pkgs.codex;
+        settings.model_reasoning_effort = "high"; # /etc/codex/config.toml
+        # instructions = "";
+        # skills = {};
+      };
+      claudeCode = {
+        # enable = true;
+        # package = pkgs.claude-code; # unfree
+        # settings = {}; # /etc/claude-code/managed-settings.json
+      };
+      antigravity = {
+        # enable = true;
+        # package = pkgs.antigravity-cli; # unfree
+        # Gemini-compatible gateway for terminal agy sessions.
+        # gateway = {
+        #   url = "https://gateway.example";
+        #   apiKeyFile = "/run/secrets/gateway-key";
+        #   models = ["gemini-3-pro"];
+        # };
+      };
+    };
+
     desktop = {
       # enable = true;
       # package = inputs.t3code.packages.${pkgs.stdenv.hostPlatform.system}.nightly.desktop;

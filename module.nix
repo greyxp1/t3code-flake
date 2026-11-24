@@ -33,6 +33,8 @@ self: {
       '';
     });
 in {
+  imports = [./modules/codex.nix ./modules/claude-code.nix ./modules/antigravity.nix];
+
   options.programs.t3code = {
     enable = lib.mkEnableOption "T3 Code";
     package = lib.mkOption {
@@ -46,6 +48,16 @@ in {
       type = lib.types.attrsOf json.type;
       default = {};
       description = "Server settings merged into each user's userdata/settings.json before the headless server starts, or at login without it.";
+    };
+    instructions = lib.mkOption {
+      type = lib.types.lines;
+      default = "";
+      description = "Instructions shared by all enabled providers, before each provider's own instructions.";
+    };
+    skills = lib.mkOption {
+      type = lib.types.attrsOf lib.types.lines;
+      default = {};
+      description = "Skills shared by all enabled providers, keyed by name. Provider skills with the same name take precedence.";
     };
     desktop = {
       enable = lib.mkEnableOption "the T3 Code desktop app";

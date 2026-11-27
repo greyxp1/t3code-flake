@@ -19,6 +19,7 @@
   installShellFiles,
   makeDesktopItem,
   rustPlatform,
+  darwin,
   versionCheckHook,
   cctools,
   libicns,
@@ -50,15 +51,27 @@ let
     hash = source.spdxHash;
   };
 
-  resourceMonitor = rustPlatform.buildRustPackage {
-    pname = "t3code-resource-monitor";
-    inherit version src;
+  resourceMonitor = rustPlatform.buildRustPackage (
+    {
+      pname = "t3code-resource-monitor";
+      inherit version src;
 
-    sourceRoot = "${src.name}/native/resource-monitor";
-    # inspects the test process's own RSS via procfs, 0 on some builders
-    checkFlags = [ "--skip=tests::loads_details_when_an_existing_process_becomes_selected" ];
-    inherit (source) cargoHash;
-  };
+      sourceRoot = "${src.name}/native/resource-monitor";
+      # inspects the test process's own RSS via procfs, 0 on some builders
+      checkFlags = [ "--skip=tests::loads_details_when_an_existing_process_becomes_selected" ];
+      inherit (source) cargoHash;
+    }
+    // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
+      # The process identity test expects Darwin ps and BSD date -r.
+      preCheck = ''
+        checkPath="$PATH"
+        export PATH="${darwin.ps}/bin:${darwin.shell_cmds}/bin:$PATH"
+      '';
+      postCheck = ''
+        export PATH="$checkPath"
+      '';
+    }
+  );
 
   platformKey =
     {
